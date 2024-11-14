@@ -16,7 +16,9 @@ function App() {
       }
   } 
 
+  const encriptacion = (e) =>
 
+ // https://codesandbox.io/p/devbox/zen-khayyam-zfh775?file=%2Findex.ts
   return (
     <div className="App">
       <form method="post">
@@ -28,7 +30,7 @@ function App() {
           <label>contraseña:</label>
           <input type="password" name="contraseña" />
         </div>
-        <button type="submit" value="">agregar</button>
+        <button type="submit" value="submit">agregar</button>
       </form>
     </div>
   );
