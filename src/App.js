@@ -1,16 +1,17 @@
 import './App.css';
 import { useState } from 'react';
-import nacl from 'tweetnacl';
-import naclUtil from 'tweetnacl-util';
+import sha256 from "js-sha256";
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 
 function App() {
-  const [correo, setCorreo] = useState("");
-  const [contrasena, setContrasena] = useState("");
-  const [Ncorreo, setNCorreo] = useState("");
-  const [Ncontrasena, setNContrasena] = useState("");
-  const [Nnombre, setNnombre] = useState("");
+  const [correo, setCorreo] = useState(""); 
+  const [contrasena, setContrasena] = useState(""); 
+  const [Ncorreo, setNCorreo] = useState(""); 
+  const [Ncontrasena, setNContrasena] = useState(""); 
+  const [Nnombre, setNnombre] = useState(""); 
+  const [loggedIn, setLoggedIn] = useState(false); 
+  const [nombre, setNombre] = useState(""); 
 
-  // Validaciones
   const validarInput = (valor) => {
     return !valor.includes("'") && !valor.includes('"') && !valor.includes('=');
   };
@@ -32,29 +33,23 @@ function App() {
       alert('La contraseña contiene caracteres no permitidos.');
     }
   };
+
   // Login
-
-
   const envioLogin = async (e) => {
     e.preventDefault();
-    //const encrypted = encryptChaCha20(contrasena);
-  
-    const body = {
-      correo,
-      contrasena
-    };
-    console.log('Datos enviados al servidor:', body);
-  
+    const Lcontrasena = sha256(contrasena).toUpperCase();
+    const Lcorreo = sha256(correo).toUpperCase();
+    const body = { Lcorreo, Lcontrasena };
     try {
       const response = await fetch('http://localhost:5000/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-  
       const data = await response.json();
       if (response.ok) {
-        alert('Login exitoso');
+        setNombre(data.nombre); // Establecer el nombre recibido del backend
+        setLoggedIn(true); // Marcar al usuario como logueado
       } else {
         alert(data.error || 'Error en login');
       }
@@ -67,20 +62,21 @@ function App() {
   // Registro
   const CrearLogin = async (e) => {
     e.preventDefault();
+    const CorreoSN = Ncorreo;
+    const NNcontrasena = sha256(Ncontrasena).toUpperCase();
+    const NNcorreo = sha256(Ncorreo).toUpperCase();
+    const body = {
+      Nnombre,
+      CorreoSN,
+      NNcorreo,
+      NNcontrasena
+    };
     try {
-      
       const response = await fetch('http://localhost:5000/register', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          nombre: Nnombre,
-          correo: Ncorreo,
-          contrasena: Ncontrasena,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
-
       const data = await response.json();
       if (response.ok) {
         alert('Usuario creado exitosamente: ' + data.message);
@@ -90,33 +86,59 @@ function App() {
     } catch (error) {
       console.error('Error:', error);
       alert('Error de conexión con el servidor.');
-
     }
   };
 
   return (
-    <div className="App">
-      {/* Login */}
-      <h2>Login</h2>
-      <form onSubmit={envioLogin}>
-        <label>Correo:</label>
-        <input type="email" value={correo} onChange={RestriccionCorreo} />
-        <label>Contraseña:</label>
-        <input type="password" value={contrasena} onChange={RestriccionContrasena} />
-        <button type="submit">Iniciar sesión</button>
-      </form>
+    <Router>
+      <div className="App">
+        {/* Rutas */}
+        <Routes>
+          {/* Ruta de login */}
+          <Route 
+            path="/login" 
+            element={loggedIn ? <Navigate to="/" /> : (
+              <div>
+                <h2>Login</h2>
+                <form onSubmit={envioLogin}>
+                  <label>Correo:</label>
+                  <input type="email" value={correo} onChange={RestriccionCorreo} />
+                  <label>Contraseña:</label>
+                  <input type="password" value={contrasena} onChange={RestriccionContrasena} />
+                  <button type="submit">Iniciar sesión</button>
+                </form>
 
-      {/* Registro */}
-      <h2>Registro</h2>
-      <form onSubmit={CrearLogin}>
-        <label>Nombre:</label>
-        <input type="text" value={Nnombre} onChange={(e) => setNnombre(e.target.value)} />
-        <label>Correo:</label>
-        <input type="email" value={Ncorreo} onChange={(e) => setNCorreo(e.target.value)} />
-        <label>Contraseña:</label>
-        <input type="password" value={Ncontrasena} onChange={(e) => setNContrasena(e.target.value)} />
-        <button type="submit">Registrar</button>
-      </form>
+                <h2>Registro</h2>
+                <form onSubmit={CrearLogin}>
+                  <label>Nombre:</label>
+                  <input type="text" value={Nnombre} onChange={(e) => setNnombre(e.target.value)} />
+                  <label>Correo:</label>
+                  <input type="email" value={Ncorreo} onChange={(e) => setNCorreo(e.target.value)} />
+                  <label>Contraseña:</label>
+                  <input type="password" value={Ncontrasena} onChange={(e) => setNContrasena(e.target.value)} />
+                  <button type="submit">Registrar</button>
+                </form>
+              </div>
+            )} 
+          />
+          
+          {/* Ruta de bienvenida que muestra el nombre del usuario si está logueado */}
+          <Route 
+            path="/" 
+            element={loggedIn ? <Bienvenida nombre={nombre} /> : <Navigate to="/login" />} 
+          />
+        </Routes>
+      </div>
+    </Router>
+  );
+}
+
+// Componente de bienvenida
+function Bienvenida({ nombre }) {
+  return (
+    <div>
+      <h1>Bienvenido, {nombre}!</h1>
+      <p>Has iniciado sesión correctamente. ¡Disfruta de la aplicación!</p>
     </div>
   );
 }

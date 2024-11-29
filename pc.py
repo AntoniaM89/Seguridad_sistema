@@ -1,17 +1,15 @@
 from flask import Flask, request, jsonify
 import mysql.connector
 from flask_cors import CORS
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
-import base64
+import hashlib
 import os
-
-#ENCRYPTION_KEY = base64.b64decode("Y4sdD5naWqLQTfTBwWQs1SVWIz/77pPpUrvFF8ZTo78=")
+from datetime import timedelta
 
 app = Flask(__name__)
-cors = CORS(app)
-cors = CORS(app, resources={r"/login": {"origins": "*"}})
 
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+# Conexión a la base de datos
 db = mysql.connector.connect(
     host='localhost',
     user='root',
@@ -20,107 +18,90 @@ db = mysql.connector.connect(
 )
 
 cursor = db.cursor()
-"""
-def decrypt_chacha20(nonce, ciphertext):
-    cipher = Cipher(algorithms.ChaCha20(ENCRYPTION_KEY, nonce), mode=None, backend=default_backend())
-    decryptor = cipher.decryptor()
-    return decryptor.update(ciphertext)
-"""
+
+# Ruta de login
 @app.route('/login', methods=['POST'])
 def login():
-    # Obtener los datos del cuerpo de la solicitud
-    data = request.json  
-    correo = data.get('correo')
-    contrasena= data.get('contrasena')
-#    contrasena_encrypted = data.get('contrasena')
+    data = request.get_json()
+    correo = data.get('Lcorreo')
+    contrasena = data.get('Lcontrasena')
 
-    # Verificar si la contraseña está presente
-#    if not contrasena_encrypted:
-#        return jsonify({'error': 'La contraseña es obligatoria'}), 400
+    try:
+        # Verificar si el correo existe en la base de datos
+        cursor.execute("SELECT nombre, hashed, salt, bloqueado, intentos FROM login WHERE correoh=%s", (correo,))
+        user_data = cursor.fetchone()
 
-#    try:
-        # Intentar separar el nonce y el ciphertext
-#        nonce, ciphertext = contrasena_encrypted.split(':')
-#        print('Datos recibidos en /login:')
-#        print('Correo:', correo)
-#        print('Contrasena:', contrasena_encrypted)
+        # Si no se encuentra el usuario
+        if not user_data:
+            return jsonify({'error': 'Usuario no encontrado'}), 404
 
-        # Decodificar los valores base64
-#        nonce = base64.b64decode(nonce)
-#        ciphertext = base64.b64decode(ciphertext)
+        # Desempaquetar los datos del usuario
+        nombre, stored_hashed, stored_salt_hex, bloqueado, intentos = user_data
 
-#        print('Nonce decodificado:', nonce)
-#        print('Ciphertext decodificado:', ciphertext)
+        # Verificar si la cuenta está bloqueada
+        if bloqueado:
+            return jsonify({'error': 'Cuenta bloqueada. Contacte al administrador'}), 403
 
-        # Verificar que el nonce tiene el tamaño correcto (16 bytes)
-        #if len(nonce) != 16:
-        #    return jsonify({'error': 'El nonce debe tener 16 bytes'}), 400
+        # Verificar si stored_salt_hex es de tipo bytes, y convertirlo a str si es necesario
+        if isinstance(stored_salt_hex, bytes):
+            stored_salt_hex = stored_salt_hex.decode('utf-8')
 
-        # Desencriptar la contraseña
-#        contrasena = decrypt_chacha20(nonce, ciphertext).decode()
+        # Convertir el salt desde hex a bytes
+        stored_salt = bytes.fromhex(stored_salt_hex)
 
-#        print(f"Contraseña descifrada: {contrasena}")  # Imprimir la contraseña descifrada
+        print(f"Salt recuperado: {stored_salt}")
+        print(f"Contrasena recibida: {contrasena}")
 
-#    except Exception as e:
-#        print(f"Error al procesar la contraseña: {e}")
-#        return jsonify({'error': 'Error al procesar la contraseña', 'details': str(e)}), 400
+        # Calcular el hash utilizando el salt y la contraseña
+        hashed_attempt = hashlib.sha256(stored_salt + contrasena.encode('utf-8')).hexdigest().upper()
 
-    # Verificar que los datos necesarios estén presentes
-#    if not correo or not contrasena:
-#        return jsonify({'error': 'El correo y la contraseña son obligatorios'}), 400
+        print(f"Hash calculado: {hashed_attempt}")
+        print(f"Hash almacenado: {stored_hashed}")
 
-    #try:
-        # Realizar la consulta de login en la base de datos
-    cursor.execute("SELECT correo, contrasena FROM login WHERE correo = %s AND contrasena = %s",(correo, contrasena))
-    login_result = cursor.fetchone()
-    if login_result:
-        return jsonify({'message': 'Login exitoso'}), 200
-    else:
-        return jsonify({'error': 'Credenciales inválidas'}), 401
-    #except mysql.connector.Error as err:
-    print(f"Error en la consulta de login: {err}")
-    return jsonify({'error': 'Error al procesar el login'}), 500
+        # Comparar el hash calculado con el hash almacenado
+        if hashed_attempt == stored_hashed:
+            # Si el hash coincide, iniciar sesión exitoso, restablecer intentos fallidos
+            cursor.execute("UPDATE login SET intentos=0 WHERE correoh=%s", (correo,))
+            db.commit()
+            return jsonify({'message': 'Inicio de sesión exitoso', 'nombre': nombre}), 200
+        else:
+            # Si no coincide, incrementar intentos fallidos
+            intentos += 1
+            cursor.execute("UPDATE login SET intentos=%s WHERE correoh=%s", (intentos, correo))
+            db.commit()
 
+            # Si se alcanzan 3 intentos fallidos, bloquear la cuenta
+            if intentos >= 3:
+                cursor.execute("UPDATE login SET bloqueado=1 WHERE correoh=%s", (correo,))
+                db.commit()
+                return jsonify({'error': 'Cuenta bloqueada por múltiples intentos fallidos'}), 403
+
+            return jsonify({'error': f'Credenciales inválidas. Intentos restantes: {3 - intentos}'}), 401
+
+    except Exception as err:
+        return jsonify({'error': f'Error inesperado: {err}'}), 500
+
+
+# Ruta de registro
 @app.route('/register', methods=['POST'])
 def register():
     # Obtener los datos del cuerpo de la solicitud
-    data = request.json  
+    data = request.get_json()      
     print(f"Datos recibidos en /register: {data}") 
-    nombre = data.get('nombre')
-    correo = data.get('correo')
-    contrasena = data.get('contrasena')
-    #nonce = data.get('nonce')
-    #ciphertext = data.get('ciphertext')
-    """
-    if not nonce or not ciphertext:
-        return jsonify({'error': 'El nonce y el ciphertext son obligatorios'}), 400
+    nombre = data.get('Nnombre')
+    correo = data.get('CorreoSN')
+    correoh = data.get('NNcorreo')  # Correo hashed
+    contrasena = data.get('NNcontrasena')
+    
+    # Generar salt y hashear la contraseña con el salt
+    salt = os.urandom(16)
+    salt_hex = salt.hex()
+    hashed = hashlib.sha256(salt + contrasena.encode('utf-8')).hexdigest().upper()
 
-    try:
-        # Decodificar los valores base64
-        nonce = base64.b64decode(nonce)
-        ciphertext = base64.b64decode(ciphertext)
-
-        print('Nonce decodificado:', nonce)
-        print('Ciphertext decodificado:', ciphertext)
-
-        # Verificar que el nonce tiene el tamaño correcto (16 bytes)
-        if len(nonce) != 16:
-            return jsonify({'error': 'El nonce debe tener 16 bytes'}), 400
-
-        # Desencriptar la contraseña
-        contrasena = decrypt_chacha20(nonce, ciphertext).decode()
-
-    except Exception as e:
-        print(f"Error al procesar la contraseña: {e}")
-        return jsonify({'error': 'Error al procesar la contraseña', 'details': str(e)}), 400
-
-    # Verificar que los datos necesarios estén presentes
-    if not nombre or not correo or not contrasena:
-        return jsonify({'error': 'El nombre, correo y contraseña son obligatorios'}), 400
-    """
     try:
         # Insertar el usuario en la base de datos
-        cursor.execute("INSERT INTO login (nombre, correo, contrasena) VALUES (%s, %s, %s)",(nombre, correo, contrasena))
+        cursor.execute("INSERT INTO login (nombre, correo, correoh, hashed, salt, intentos, bloqueado, session_id) VALUES (%s, %s, %s, %s, %s, 0, 0, '0')", 
+                       (nombre, correo, correoh, hashed, salt_hex))
         db.commit()  # Confirmar los cambios
         return jsonify({'message': 'Usuario creado exitosamente'}), 201
     except mysql.connector.IntegrityError as err:
@@ -129,6 +110,7 @@ def register():
     except mysql.connector.Error as err:
         print(f"Error al insertar en la base de datos: {err}")
         return jsonify({'error': 'Error al crear el usuario'}), 500
+
 
 if __name__ == '__main__':
     app.run(host='localhost', port=5000, debug=True)
