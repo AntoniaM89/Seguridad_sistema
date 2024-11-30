@@ -12,7 +12,7 @@ CORS(app, supports_credentials=True, resources={r"/*": {"origins": "http://local
 
 # Conexión a la base de datos
 db = mysql.connector.connect(
-    host='localhost',
+    host='0.0.0.0',
     user='root',
     password='Avril.8989!',
     database='Seguridad'
@@ -100,4 +100,4 @@ def register():
 
 
 if __name__ == '__main__':
-    app.run(host='localhost', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
