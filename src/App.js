@@ -1,7 +1,8 @@
 import './App.css';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import sha256 from "js-sha256";
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import Cookies from 'js-cookie';
 
 function App() {
   const [correo, setCorreo] = useState(""); 
@@ -35,21 +36,34 @@ function App() {
   };
 
   // Login
+
+  useEffect(() => {
+    // Verificar si hay una sesión activa
+    const sessionId = Cookies.get('session_id');
+    if (sessionId) {
+      setLoggedIn(true);
+    }
+  }, []);
+
   const envioLogin = async (e) => {
     e.preventDefault();
     const Lcontrasena = sha256(contrasena).toUpperCase();
     const Lcorreo = sha256(correo).toUpperCase();
     const body = { Lcorreo, Lcontrasena };
+
     try {
       const response = await fetch('http://localhost:5000/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        credentials: 'include', // Para recibir cookies desde el backend
       });
+
       const data = await response.json();
+
       if (response.ok) {
-        setNombre(data.nombre); // Establecer el nombre recibido del backend
-        setLoggedIn(true); // Marcar al usuario como logueado
+        setNombre(data.nombre);
+        setLoggedIn(true);
       } else {
         alert(data.error || 'Error en login');
       }
